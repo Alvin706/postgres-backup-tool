@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostgreSQL Backup & Restore Tool</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-badge {
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+        }
+        .backup-item {
+            transition: all 0.3s ease;
+        }
+        .backup-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .progress-container {
+            display: none;
+        }
+        .schedule-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .database-info {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .quick-actions {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        .quick-actions .btn {
+            border: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .quick-actions .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .table-structure-modal .modal-dialog {
+            max-width: 900px;
+        }
+        .table-item {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .table-name {
+            color: #495057;
+            font-weight: 600;
+        }
+        /* 优化左侧工具栏显示 */
+        .left-panel .card-title {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        .left-panel .btn {
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+        .left-panel .card-body p {
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+        .left-panel .btn-sm {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        /* 左侧工具栏固定宽度，不随屏幕拉伸 */
+        .left-panel {
+            flex: 0 0 300px !important; /* 固定宽度300px */
+            max-width: 300px !important;
+            min-width: 300px !important;
+        }
+        /* 右侧内容区域自适应拉伸 */
+        .right-panel {
+            flex: 1 1 auto !important; /* 自动拉伸填充剩余空间 */
+            min-width: 0 !important; /* 防止内容溢出 */
+        }
+        /* 在中等屏幕上调整左侧宽度 */
+        @media (max-width: 1200px) {
+            .left-panel {
+                flex: 0 0 280px !important;
+                max-width: 280px !important;
+                min-width: 280px !important;
+            }
+        }
+        /* 在小屏幕上进一步调整 */
+        @media (max-width: 768px) {
+            .left-panel {
+                flex: 0 0 250px !important;
+                max-width: 250px !important;
+                min-width: 250px !important;
+            }
+            .left-panel .card-title {
+                font-size: 0.9rem !important;
+            }
+            .left-panel .btn {
+                font-size: 0.75rem !important;
+                padding: 0.25rem 0.5rem !important;
+            }
+            .left-panel .card-body p {
+                font-size: 0.75rem !important;
+            }
+            .left-panel .btn-sm {
+                font-size: 0.7rem !important;
+                padding: 0.2rem 0.4rem !important;
+            }
+        }
+        /* 超小屏幕上的处理 */
+        @media (max-width: 576px) {
+            .left-panel {
+                flex: 0 0 100% !important;
+                max-width: 100% !important;
+                min-width: 100% !important;
+                margin-bottom: 1rem;
+            }
+            .right-panel {
+                flex: 0 0 100% !important;
+                max-width: 100% !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid">
+        <!-- 头部 -->
+        <div class="row">
+            <div class="col-12">
+                <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+                    <div class="container-fluid">
+                        <a class="navbar-brand" href="#">
+                            <i class="fas fa-database"></i> Dream &nbsp;&nbsp; Data Mangement Tool
+                        </a>
+                        <div class="navbar-nav ms-auto">
+                            <button class="btn btn-outline-light btn-sm me-3" onclick="showConfigModal()">
+                                <i class="fas fa-cog"></i> 设置
+                            </button>
+                            <span class="navbar-text" id="connectionStatus">
+                                <i class="fas fa-circle text-success"></i> 连接正常
+                            </span>
+                        </div>
+                    </div>
+                </nav>
+            </div>
+        </div>
+
+        <!-- 主要内容 -->
+        <div class="d-flex mt-4">
+            <!-- 左侧面板 -->
+            <div class="left-panel me-3">
+                <!-- 快速操作 -->
+                <div class="card mb-4 quick-actions">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="fas fa-tools"></i> 快速操作
+                        </h5>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-light" onclick="createBackup()">
+                                <i class="fas fa-plus"></i> 创建备份
+                            </button>
+                            <button class="btn btn-light" onclick="restoreLatest()">
+                                <i class="fas fa-undo"></i> 恢复最新备份
+                            </button>
+                            <button class="btn btn-light" onclick="refreshData()">
+                                <i class="fas fa-sync"></i> 刷新数据
+                            </button>
+                            <button class="btn btn-light" onclick="manualCleanup()">
+                                <i class="fas fa-trash"></i> 清理旧备份
+                            </button>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 定时备份 -->
+                <div class="card mb-4 schedule-info">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="fas fa-clock"></i> 定时备份
+                        </h5>
+                        <div id="scheduleInfo">
+                            <p><strong>状态:</strong> <span id="scheduleStatus">-</span></p>
+                            <p><strong>间隔:</strong> <span id="scheduleInterval">-</span> 小时</p>
+                            <p><strong>下次运行:</strong> <span id="nextRun">-</span></p>
+                            <p><strong>最后运行:</strong> <span id="lastRun">-</span></p>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-outline-light btn-sm me-2" onclick="startSchedule()">
+                                <i class="fas fa-play"></i> 启动
+                            </button>
+                            <button class="btn btn-outline-light btn-sm me-2" onclick="stopSchedule()">
+                                <i class="fas fa-stop"></i> 停止
+                            </button>
+                            <button class="btn btn-outline-light btn-sm" onclick="triggerBackup()">
+                                <i class="fas fa-bolt"></i> 立即备份
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据库信息 -->
+                <div class="card mb-4 database-info">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="fas fa-info-circle"></i> 数据库信息
+                        </h5>
+                        <div id="databaseInfo">
+                            <p><strong>数据库大小:</strong> <span id="dbSize">-</span></p>
+                            <p><strong>表数量:</strong> <span id="tableCount">-</span></p>
+                            <div class="mt-3">
+                                <button class="btn btn-outline-light btn-sm me-2" onclick="showTableStructure()">
+                                    <i class="fas fa-table"></i> 查看表结构
+                                </button>
+                                <button class="btn btn-outline-light btn-sm" onclick="showConfigModal()">
+                                    <i class="fas fa-cog"></i> 系统设置
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧面板 -->
+            <div class="right-panel">
+                <!-- 备份列表 -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-archive"></i> 备份列表
+                        </h5>
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="refreshData()">
+                                <i class="fas fa-sync"></i> 刷新
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="createBackup()">
+                                <i class="fas fa-plus"></i> 新建备份
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="batchDeleteBackups()" id="batchDeleteBtn" style="display: none;">
+                                <i class="fas fa-trash"></i> 批量删除
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- 进度条 -->
+                        <div class="progress-container">
+                            <div class="progress mb-3">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text text-center">准备中...</div>
+                        </div>
+                        
+                        <!-- 批量操作控制栏 -->
+                        <div class="d-flex justify-content-between align-items-center mb-3" id="batchControls" style="display: none;">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                <label class="form-check-label" for="selectAll">
+                                    全选
+                                </label>
+                            </div>
+                            <div>
+                                <span id="selectedCount">已选择 0 项</span>
+                            </div>
+                        </div>
+
+                        <!-- 备份列表 -->
+                        <div id="backupList">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2 text-muted">正在加载备份列表...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 表结构模态框 -->
+    <div class="modal fade table-structure-modal" id="tableStructureModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-table"></i> 数据库表结构
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="tablesInfo">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">正在加载表结构...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 -->
+    <div class="modal fade" id="backupModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">创建备份</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="backupDescription" class="form-label">备份描述</label>
+                        <input type="text" class="form-control" id="backupDescription" 
+                               placeholder="请输入备份描述（可选）">
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="compressBackup" checked>
+                        <label class="form-check-label" for="compressBackup">
+                            压缩备份文件
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmBackup()">创建备份</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 恢复确认模态框 -->
+    <div class="modal fade" id="restoreModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">确认恢复</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>警告：</strong> 恢复操作将覆盖当前数据库中的所有数据！
+                    </div>
+                    <p>您确定要恢复备份 <strong id="restoreBackupId"></strong> 吗？</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">恢复类型（可选）：</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="restoreType" id="incrementalRestore" value="incremental" checked>
+                            <label class="form-check-label" for="incrementalRestore">
+                                <strong>增量恢复</strong> - 保留现有数据，只恢复备份中的变更（推荐）
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="restoreType" id="normalRestore" value="normal">
+                            <label class="form-check-label" for="normalRestore">
+                                <strong>普通恢复</strong> - 使用备份文件中的默认恢复策略
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="restoreType" id="fullRestore" value="full">
+                            <label class="form-check-label text-danger fw-bold" for="fullRestore">
+                                <strong>⚠️ 完全恢复</strong> - 删除现有数据库，完全恢复到备份状态（危险操作）
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="forceRestore">
+                        <label class="form-check-label" for="forceRestore">
+                            强制恢复（忽略版本检查）
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmRestore()">确认恢复</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置管理模态框 -->
+    <div class="modal fade" id="configModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">系统配置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 配置标签页 -->
+                    <ul class="nav nav-tabs" id="configTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="database-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#database-config" type="button" role="tab">
+                                <i class="fas fa-database"></i> 数据库配置
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="backup-tab" data-bs-toggle="tab" 
+                                    data-bs-target="#backup-config" type="button" role="tab">
+                                <i class="fas fa-archive"></i> 备份配置
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content mt-3" id="configTabContent">
+                        <!-- 数据库配置 -->
+                        <div class="tab-pane fade show active" id="database-config" role="tabpanel">
+                            <form id="databaseConfigForm">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <label class="form-label">数据库主机</label>
+                                        <input type="text" class="form-control" id="configDbHost" 
+                                               placeholder="localhost" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">端口</label>
+                                        <input type="number" class="form-control" id="configDbPort" 
+                                               placeholder="5432" min="1" max="65535" required>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">数据库名</label>
+                                        <input type="text" class="form-control" id="configDbName" 
+                                               placeholder="database_name" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">用户名</label>
+                                        <input type="text" class="form-control" id="configDbUser" 
+                                               placeholder="username" required>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" id="configDbPassword" 
+                                           placeholder="password">
+                                </div>
+                                <div class="mt-3">
+                                    <button type="button" class="btn btn-outline-primary me-2" onclick="testDatabaseConnection()">
+                                        <i class="fas fa-plug"></i> 测试连接
+                                    </button>
+                                    <button type="button" class="btn btn-success" onclick="updateDatabaseConfig()">
+                                        <i class="fas fa-save"></i> 保存配置
+                                    </button>
+                                </div>
+                                <div id="connectionTestResult" class="mt-3"></div>
+                            </form>
+                        </div>
+
+                        <!-- 备份配置 -->
+                        <div class="tab-pane fade" id="backup-config" role="tabpanel">
+                            <form id="backupConfigForm">
+                                <div class="mb-3">
+                                    <label class="form-label">备份存储路径</label>
+                                    <input type="text" class="form-control" id="configBackupPath" 
+                                           placeholder="./backups" required>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label">备份间隔 (小时)</label>
+                                        <input type="number" class="form-control" id="configBackupInterval" 
+                                               placeholder="12" min="1" max="8760" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">最大备份数量</label>
+                                        <input type="number" class="form-control" id="configMaxBackups" 
+                                               placeholder="30" min="1" max="1000" required>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="configCompression" checked>
+                                        <label class="form-check-label" for="configCompression">
+                                            启用备份文件压缩
+                                        </label>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h6>自动清理设置</h6>
+                                <div class="mt-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="configCleanupEnabled" checked>
+                                        <label class="form-check-label" for="configCleanupEnabled">
+                                            启用自动清理
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">清理间隔 (天)</label>
+                                        <input type="number" class="form-control" id="configCleanupInterval" 
+                                               placeholder="7" min="1" max="365" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">保留天数</label>
+                                        <input type="number" class="form-control" id="configCleanupKeepDays" 
+                                               placeholder="30" min="1" max="3650" required>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <button type="button" class="btn btn-success" onclick="updateBackupConfig()">
+                                        <i class="fas fa-save"></i> 保存配置
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+        </div>
+
+
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+    <script>
+        // 页面关闭确认相关变量
+        let hasUnsavedChanges = true;
+        let userHasInteracted = false;
+        let lastInteractionTime = 0;
+
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', function() {
+            window.backupTool = new BackupTool();
+            window.backupTool.init();
+            
+            // 标记用户交互 - 现代浏览器要求必须在用户交互后立即设置
+            function markUserInteraction() {
+                userHasInteracted = true;
+                lastInteractionTime = Date.now();
+            }
+            
+            // 监听所有可能的用户交互事件
+            const interactionEvents = ['mousedown', 'mouseup', 'click', 'keydown', 'keyup', 'touchstart', 'touchend'];
+            interactionEvents.forEach(eventType => {
+                document.addEventListener(eventType, markUserInteraction, { passive: true });
+            });
+            
+            // 专门针对Mac浏览器的beforeunload处理
+            window.addEventListener('beforeunload', function(e) {
+                if (hasUnsavedChanges && userHasInteracted) {
+                    // 检查用户交互时间，必须在交互后短时间内
+                    const timeSinceInteraction = Date.now() - lastInteractionTime;
+                    if (timeSinceInteraction < 30000) { // 30秒内
+                        // 现代浏览器的标准方式 - 不能自定义消息
+                        e.preventDefault();
+                        e.returnValue = '';
+                        return '';
+                    }
+                }
+            });
+            
+            // 模拟表单输入来触发浏览器的未保存状态
+            const hiddenForm = document.createElement('form');
+            hiddenForm.style.display = 'none';
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'text';
+            hiddenInput.value = 'unsaved';
+            hiddenForm.appendChild(hiddenInput);
+            document.body.appendChild(hiddenForm);
+            
+            // 在用户交互后立即设置输入值变化
+            document.addEventListener('click', function() {
+                markUserInteraction();
+                hiddenInput.value = 'modified_' + Date.now();
+                // 触发input事件
+                hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }, { once: true });
+            
+            // 监听键盘快捷键 - 针对Mac进行优化
+            document.addEventListener('keydown', function(e) {
+                markUserInteraction();
+                
+                // Mac特定的快捷键处理
+                if (e.metaKey) {
+                    switch(e.key) {
+                        case 'w': // Cmd+W 关闭标签页
+                            if (hasUnsavedChanges && userHasInteracted) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (confirm('确定要关闭页面吗？未保存的操作可能会丢失。')) {
+                                    hasUnsavedChanges = false;
+                                    window.close();
+                                }
+                                return false;
+                            }
+                            break;
+                        case 'r': // Cmd+R 刷新页面
+                            if (hasUnsavedChanges && userHasInteracted) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (confirm('确定要刷新页面吗？未保存的操作可能会丢失。')) {
+                                    hasUnsavedChanges = false;
+                                    window.location.reload();
+                                }
+                                return false;
+                            }
+                            break;
+                    }
+                }
+                
+                // F5 刷新页面
+                if (e.key === 'F5') {
+                    if (hasUnsavedChanges && userHasInteracted) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (confirm('确定要刷新页面吗？未保存的操作可能会丢失。')) {
+                            hasUnsavedChanges = false;
+                            window.location.reload();
+                        }
+                        return false;
+                    }
+                }
+            });
+
+        });
+    </script>
+</body>
+</html> 
