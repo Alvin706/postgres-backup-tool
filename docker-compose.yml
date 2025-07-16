@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # PostgreSQL备份工具
+  backup-tool:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8000"
+    volumes:
+      - ./backups:/app/backups
+      - ./config.json:/app/config.json
+      - ./templates:/app/templates
+      - ./static:/app/static
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - backup-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 60s
+
+  # PostgreSQL数据库（示例）
+  postgres:
+    image: postgres:17
+    environment:
+      - POSTGRES_DB=testdb
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpass
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backup-network
+    restart: unless-stopped
+
+  # pgAdmin管理界面（可选）
+  pgadmin:
+    image: dpage/pgadmin4:7
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - backup-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  backup-network:
+    driver: bridge 
