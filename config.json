@@ -1,0 +1,24 @@
+{
+  "database": {
+    "host": "192.168.3.202",
+    "port": 5432,
+    "database": "mytest123",
+    "username": "postgres",
+    "password": "123456"
+  },
+  "backup": {
+    "storage_path": "./backups",
+    "interval_hours": 1,
+    "max_backups": 10,
+    "compression": true,
+    "cleanup_enabled": true,
+    "cleanup_interval_days": 3,
+    "cleanup_keep_days": 20
+  },
+  "app": {
+    "title": "PostgreSQL Backup & Restore Tool",
+    "host": "0.0.0.0",
+    "port": 8000,
+    "debug": false
+  }
+}
