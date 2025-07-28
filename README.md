@@ -1,4 +1,4 @@
-# PostgreSQL Backup & Restore Tool 哥哥们帮我点颗🌟呗
+# PostgreSQL Backup & Restore Tool 如果对你有帮助请帮我点颗🌟呗
 
 一个功能强大的PostgreSQL数据库备份和恢复工具，提供Web界面管理，支持多种恢复策略和自动化备份。
 
